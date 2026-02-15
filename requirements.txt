@@ -1,0 +1,22 @@
+# LEAP Strategic Asset Engine - Dependencies
+
+# Data & Market APIs
+yfinance>=0.2.36
+pandas>=2.2.0
+numpy>=1.26.0
+
+# LLM Integration
+openai>=1.12.0  # OpenRouter uses OpenAI-compatible API
+requests>=2.31.0
+
+# Database
+sqlalchemy>=2.0.25
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.6.0
+loguru>=0.7.2
+
+# Optional: For advanced features
+scikit-learn>=1.4.0  # For statistical analysis
+scipy>=1.12.0  # For advanced calculations
