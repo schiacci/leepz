@@ -287,6 +287,17 @@ def main():
                     print("\n" + "-"*60)
                     print(f"✅ {symbol} Analysis Complete")
                     print("-"*60)
+                    
+                    # Add clear BUY/SELL recommendation
+                    if trade_card.approved:
+                        print(f"🎯 RECOMMENDATION: BUY {symbol} LEAP Call")
+                        print(f"   Entry: ${trade_card.entry_price:.2f} | Target: ${trade_card.projected_exit_price_1yr:.2f}")
+                        print(f"   Expected Return: {trade_card.projected_return_pct:+.1f}%")
+                    else:
+                        print(f"❌ RECOMMENDATION: SELL/AVOID {symbol} LEAP Call")
+                        print(f"   Risk concerns outweigh potential rewards")
+                    
+                    print("-"*60)
                     print(trade_card.to_markdown())
                 else:
                     print(f"\n❌ Analysis failed for {symbol}")
@@ -305,7 +316,10 @@ def main():
                         markdown_path = Path(f"./outputs/{card.ticker}_trade_card.md")
                         markdown_path.parent.mkdir(exist_ok=True)
                         markdown_path.write_text(card.to_markdown())
-                        print(f"📄 Exported {card.ticker} to {markdown_path}")
+                        
+                        # Add recommendation status to export message
+                        rec_status = "BUY" if card.approved else "SELL/AVOID"
+                        print(f"📄 Exported {card.ticker} to {markdown_path} - {rec_status} {card.ticker} LEAP Call")
             else:
                 print("\n❌ No analyses completed successfully")
             
