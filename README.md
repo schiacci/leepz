@@ -124,6 +124,39 @@ Export all approved recommendations to markdown:
 python main.py --export
 ```
 
+### Mode 4: Backtesting (Temporal-Constrained Historical Simulation)
+
+Run professional-grade LEAP options backtesting with temporal constraints to prevent look-ahead bias:
+
+```bash
+python main.py --backtest
+```
+
+**Backtesting Options:**
+- `--backtest-symbols "NVDA,AAPL,MSFT,TSLA,GOOGL"`: Universe of symbols (default)
+- `--backtest-start "2020-01-01"`: Start date (YYYY-MM-DD, default: 2020-01-01)
+- `--backtest-end "2024-01-01"`: End date (YYYY-MM-DD, default: 2024-01-01)
+- `--backtest-capital 100000`: Initial capital in USD (default: $100,000)
+
+**Backtesting Features:**
+- **Temporal Constraints**: AI models only use information available up to each historical date
+- **Realistic Assumptions**: Transaction costs, bid-ask spreads, position sizing
+- **Comprehensive Metrics**: Sharpe ratio, max drawdown, win rate, annualized returns
+- **Trade Audit Trail**: Complete log of all executed trades with P&L
+
+**Example - Backtest NVDA from 2023:**
+```bash
+python main.py --backtest --backtest-symbols "NVDA" --backtest-start "2023-01-01" --backtest-end "2023-12-31" --backtest-capital 50000
+```
+
+**Default Backtest Parameters:**
+- **Symbols**: NVDA, AAPL, MSFT, TSLA, GOOGL
+- **Period**: 2020-01-01 to 2024-01-01
+- **Capital**: $100,000
+- **Position Size**: 20% of capital per trade
+- **Max Positions**: 5 concurrent
+- **Strategy**: LEAP Call Options (1.5-2 year expirations)
+
 ## 🧮 LEAP Strategy Parameters
 
 The engine evaluates options based on these criteria:

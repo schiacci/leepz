@@ -26,15 +26,26 @@ class Orchestrator:
     6. Persist: Save to database
     """
     
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, backtesting_mode: bool = False, backtesting_date: Optional[datetime] = None):
         """Initialize all components"""
         self.db = Database(db_path or config.database.path)
+        self.backtesting_mode = backtesting_mode
+        self.backtesting_date = backtesting_date
+        
+        # Set global config for backtesting mode
+        if backtesting_mode:
+            config.backtesting_mode = True
+            config.backtesting_date = backtesting_date
+        
         self.scout = DiscoveryScout()
         self.data_client = MarketDataClient()
         self.quant = QuantReasoningEngine()
         self.critic = RiskCritic()
         
-        print("🚀 LEAP Strategic Asset Engine initialized")
+        if backtesting_mode:
+            print(f"🔄 BACKTESTING MODE ENABLED - Historical Date: {backtesting_date.strftime('%Y-%m-%d') if backtesting_date else 'Not Set'}")
+        else:
+            print("🚀 LEAP Strategic Asset Engine initialized")
         self._validate_config()
     
     def _validate_config(self):

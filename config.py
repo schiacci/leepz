@@ -2,6 +2,7 @@
 Configuration management for LEAP Strategic Asset Engine
 """
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -53,6 +54,8 @@ class Config(BaseModel):
     leap_heuristics: LEAPHeuristics = Field(default_factory=LEAPHeuristics)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    backtesting_mode: bool = Field(default=False)  # NEW: Enable backtesting mode
+    backtesting_date: Optional[datetime] = Field(default=None)  # NEW: Historical date for temporal constraints
 
     def validate_api_keys(self) -> bool:
         """Validate that required API keys are present"""

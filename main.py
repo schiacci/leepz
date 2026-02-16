@@ -54,10 +54,9 @@ def main():
     )
     
     parser.add_argument(
-        "--sectors",
-        type=int,
-        default=5,
-        help="Number of sectors to discover (default: 5)"
+        "--ticker",
+        type=str,
+        help="Single ticker symbol to analyze (e.g., 'NVDA')"
     )
     
     parser.add_argument(
@@ -74,9 +73,37 @@ def main():
     )
     
     parser.add_argument(
-        "--db-path",
+        "--backtest",
+        action="store_true",
+        help="Run LEAP options backtesting simulation"
+    )
+    
+    parser.add_argument(
+        "--backtest-symbols",
         type=str,
-        help="Custom database path (default: ./database/leap_engine.db)"
+        default="NVDA,AAPL,MSFT,TSLA,GOOGL",
+        help="Symbols to include in backtest (default: NVDA,AAPL,MSFT,TSLA,GOOGL)"
+    )
+    
+    parser.add_argument(
+        "--backtest-start",
+        type=str,
+        default="2020-01-01",
+        help="Backtest start date (YYYY-MM-DD, default: 2020-01-01)"
+    )
+    
+    parser.add_argument(
+        "--backtest-end",
+        type=str,
+        default="2024-01-01",
+        help="Backtest end date (YYYY-MM-DD, default: 2024-01-01)"
+    )
+    
+    parser.add_argument(
+        "--backtest-capital",
+        type=float,
+        default=100000,
+        help="Initial capital for backtest (default: 100000)"
     )
     
     args = parser.parse_args()
@@ -85,9 +112,16 @@ def main():
     setup_logging()
     
     # Initialize orchestrator
-    db_path = Path(args.db_path) if args.db_path else None
-    orchestrator = Orchestrator(db_path=db_path)
-    
+    if args.backtest:
+        from datetime import datetime
+        start_date = datetime.strptime(args.backtest_start, "%Y-%m-%d")
+        orchestrator = Orchestrator(
+            backtesting_mode=True,
+            backtesting_date=start_date  # Use start date for initial temporal context
+        )
+    else:
+        orchestrator = Orchestrator()
+
     try:
         # Mode 1: Export approved trades
         if args.export:
@@ -95,8 +129,142 @@ def main():
             files = orchestrator.export_approved_trades()
             print(f"✅ Exported {len(files)} trade cards")
             return
-        
-        # Mode 2: Batch symbol analysis
+
+        # Mode 2: Backtesting
+        if args.backtest:
+            from backtesting_engine import BacktestEngine
+            from datetime import datetime
+
+            print("\n📊 Starting LEAP Options Backtesting")
+            print("="*60)
+
+            # Parse dates
+            try:
+                start_date = datetime.strptime(args.backtest_start, "%Y-%m-%d")
+                end_date = datetime.strptime(args.backtest_end, "%Y-%m-%d")
+            except ValueError as e:
+                print(f"❌ Invalid date format: {e}")
+                print("Use YYYY-MM-DD format (e.g., 2020-01-01)")
+                return
+
+            # Parse symbols
+            symbols = [s.strip().upper() for s in args.backtest_symbols.split(',')]
+
+            print(f"📈 Backtest Period: {start_date.date()} to {end_date.date()}")
+            print(f"💰 Initial Capital: ${args.backtest_capital:,.0f}")
+            print(f"📊 Universe: {', '.join(symbols)}")
+            print(f"🎯 Strategy: LEAP Call Options (1-2 year expirations)")
+            print("="*60)
+
+            # Initialize backtesting engine
+            engine = BacktestEngine(
+                start_date=start_date,
+                end_date=end_date,
+                initial_capital=args.backtest_capital,
+                max_positions=5,
+                position_size_pct=0.20
+            )
+
+            try:
+                # Run backtest
+                result = engine.run_backtest(symbols)
+
+                # Display comprehensive results
+                print("\n" + "="*60)
+                print("📊 BACKTEST RESULTS")
+                print("="*60)
+                print(f"💰 Final Portfolio Value: ${result.total_return + args.backtest_capital:,.0f}")
+                print(f"📈 Total Return: {result.total_return:+.1f}%")
+                print(f"🎯 Annualized Return: {result.annualized_return:+.1f}%")
+                print(f"⚡ Sharpe Ratio: {result.sharpe_ratio:.2f}")
+                print(f"📉 Maximum Drawdown: {result.max_drawdown:.1f}%")
+                print(f"🏆 Win Rate: {result.win_rate:.1f}%")
+                print(f"📊 Total Trades: {result.total_trades}")
+                print(f"💪 Profitable Trades: {result.profitable_trades}")
+                print(f"📊 Average Trade Return: ${result.avg_trade_return:+.2f}")
+
+                # Special handling for no trades scenario
+                if result.total_trades == 0:
+                    print("\n" + "⚠️  NO TRADES EXECUTED" + " ⚠️")
+                    print("This could be due to:")
+                    print("• Strategy conditions not met (technical indicators)")
+                    print("• Errors during opportunity scanning")
+                    print("• Insufficient capital or position limits")
+                    print("• Data availability issues")
+                    print("\n💡 Check the logs above for 'Error finding opportunities' messages")
+
+                # Risk assessment
+                if result.total_trades == 0:
+                    risk_assessment = "⚠️ INSUFFICIENT DATA - No trades executed to evaluate"
+                elif result.sharpe_ratio > 1.5:
+                    risk_assessment = "🟢 EXCELLENT - Strong risk-adjusted returns"
+                elif result.sharpe_ratio > 1.0:
+                    risk_assessment = "🟡 GOOD - Decent risk-adjusted performance"
+                elif result.sharpe_ratio > 0.5:
+                    risk_assessment = "🟠 FAIR - Acceptable but could be improved"
+                else:
+                    risk_assessment = "🔴 POOR - High risk, low reward"
+
+                print(f"🎖️ Risk Assessment: {risk_assessment}")
+
+                print("\n" + "-"*60)
+                print("💡 Professional Interpretation:")
+                if result.total_trades > 0:
+                    print("• Sharpe > 1.5: Excellent risk-adjusted returns")
+                    print("• Max Drawdown < 20%: Reasonable portfolio stress")
+                    print("• Win Rate > 50%: Strategy has edge")
+                    print("• Annualized > 15%: Strong performance potential")
+                else:
+                    print("• No trades executed - strategy needs debugging")
+                    print("• Check date ranges and market conditions")
+                    print("• Verify technical indicators are working")
+                    print("• Ensure sufficient historical data available")
+                print("-"*60)
+
+                # Ask about detailed analysis
+                response = input("\n🔍 Show detailed trade log? (y/n): ").strip().lower()
+                if response == 'y':
+                    print("\n📋 TRADE LOG")
+                    print("="*80)
+                    print(f"\n📋 TRADE LOG (All {len(result.trades_executed)} Trades)")
+                    print("=" * 80)
+                    print(f"{'Date':<12} | {'Action':<6} | {'Contract':<40} | {'Expiration':<12} | {'Details'}")
+                    print("-" * 80)
+                    
+                    for trade in result.trades_executed:  # All trades
+                        # Format contract info based on trade type
+                        if trade['action'] == 'EXPIRE':
+                            contract_info = f"{trade['symbol']} ${trade['strike']:.2f} Call"
+                            details = f"PNL: ${trade.get('pnl', 0):+,.2f}"
+                        else:
+                            contract_info = (f"{trade.get('contracts', 'N/A')}x {trade['symbol']} "
+                                          f"${trade['strike']:.2f} Call")
+                            cost = trade.get('total_cost', 0)
+                            stock_price = trade.get('stock_price', 0)
+                            details = (f"Cost: ${cost:,.2f} | "
+                                     f"Stock: ${stock_price:.2f}")
+                        
+                        # Get expiration date (either from the trade or its expiration field)
+                        expiration = trade.get('expiration_date', 
+                                            trade.get('expiration', 'N/A'))
+                        if hasattr(expiration, 'strftime'):  # If it's a datetime object
+                            expiration = expiration.strftime('%Y-%m-%d')
+                        
+                        print(f"{trade['date'].strftime('%Y-%m-%d')} | "
+                              f"{trade['action']:<6} | "
+                              f"{contract_info:<40} | "
+                              f"{expiration:<12} | "
+                              f"{details}")
+
+                return
+
+            except Exception as e:
+                print(f"❌ Backtest failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return
+
+        # Mode 3: Batch symbol analysis
         if args.symbols:
             symbols = [s.strip().upper() for s in args.symbols.split(',')]
             print(f"\n📊 Batch Mode: Analyzing {len(symbols)} symbols")

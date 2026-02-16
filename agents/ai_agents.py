@@ -188,6 +188,21 @@ class DiscoveryScout:
         Returns:
             List of TrendingAsset objects
         """
+        # Add temporal constraints for backtesting mode
+        current_date_context = datetime.now()
+        temporal_constraint = ""
+        
+        if config.backtesting_mode and config.backtesting_date:
+            current_date_context = config.backtesting_date
+            temporal_constraint = f"""
+**IMPORTANT: TEMPORAL CONSTRAINTS FOR HISTORICAL ANALYSIS**
+- You are analyzing market conditions as they existed on {current_date_context.strftime('%Y-%m-%d')}
+- You ONLY have access to information, news, and market data available up to this date
+- You CANNOT use any knowledge of future events, earnings reports, or market developments after {current_date_context.strftime('%Y-%m-%d')}
+- Base your analysis on what would have been known and visible to investors on this historical date
+- Focus on trends, news, and market sentiment as they existed at that time
+"""
+        
         prompt = f"""You are a market research analyst scanning for high-conviction investment opportunities.
 
 Task: Identify {num_sectors} trending sectors and {tickers_per_sector} top stock tickers per sector that are getting significant attention in financial news and social media (X/Twitter) recently.
@@ -218,7 +233,9 @@ Focus on:
 - Assets suitable for LEAP options (liquid, established companies)
 - Avoid penny stocks and illiquid names
 
-Current date: {datetime.now().strftime('%Y-%m-%d')}
+{temporal_constraint}
+
+Analysis Date: {current_date_context.strftime('%Y-%m-%d')}
 """
         
         messages = [
@@ -665,6 +682,22 @@ class QuantReasoningEngine:
         # Calculate time to expiration in years
         T_years = contract.days_to_expiry / 365.0
         
+        # Add temporal constraints for backtesting mode
+        analysis_date = datetime.now()
+        temporal_constraint = ""
+        
+        if config.backtesting_mode and config.backtesting_date:
+            analysis_date = config.backtesting_date
+            temporal_constraint = f"""
+**CRITICAL: TEMPORAL CONSTRAINTS FOR HISTORICAL ANALYSIS**
+- You are performing this analysis on {analysis_date.strftime('%Y-%m-%d')}
+- You ONLY have access to market data, news, and information available up to this historical date
+- You CANNOT use any knowledge of future events, earnings results, or market developments after {analysis_date.strftime('%Y-%m-%d')}
+- Base your reasoning on quantitative data and assumptions that would have been available to investors on this date
+- The growth assumptions provided were extracted from narratives visible at that time
+- Focus on statistical analysis using the provided quantitative inputs
+"""
+        
         prompt = f"""# LEAP Options Analysis: {ticker}
 
 ## Investment Thesis
@@ -700,6 +733,8 @@ class QuantReasoningEngine:
 - **Mid Price**: ${((contract.bid + contract.ask) / 2):.2f}
 - **Bid/Ask Spread**: {contract.bid_ask_spread_pct:.2f}%
 - **Implied Volatility**: {contract.implied_volatility:.2%}
+
+{temporal_constraint}
 
 ## Your Task
 Perform a rigorous Chain-of-Thought analysis to determine if this is a sound LEAP trade using the "Buy 1.5yr, Sell 1yr" strategy.
@@ -745,6 +780,8 @@ Provide your analysis in JSON:
 ```
 
 Be thorough in your reasoning and incorporate the quantitative data provided.
+
+Analysis Date: {analysis_date.strftime('%Y-%m-%d')}
 """
         return prompt
     
@@ -861,9 +898,21 @@ class RiskCritic(LLMClient):
         iv_display = f"{contract.implied_volatility:.2%}" if contract.implied_volatility is not None else "Unknown"
         spread_display = f"{contract.bid_ask_spread_pct:.2f}%" if contract.bid_ask_spread_pct is not None else "Unknown%"
         break_even_display = f"${reasoning.break_even_price:.2f}" if reasoning.break_even_price is not None else "Unknown"
-        """Build the critique prompt"""
         
-        contract = reasoning.recommended_contract
+        # Add temporal constraints for backtesting mode
+        analysis_date = datetime.now()
+        temporal_constraint = ""
+        
+        if config.backtesting_mode and config.backtesting_date:
+            analysis_date = config.backtesting_date
+            temporal_constraint = f"""
+**CRITICAL: TEMPORAL CONSTRAINTS FOR HISTORICAL RISK ASSESSMENT**
+- You are performing this risk assessment on {analysis_date.strftime('%Y-%m-%d')}
+- You ONLY have access to market conditions and information available up to this historical date
+- You CANNOT consider future events, earnings results, or market developments after {analysis_date.strftime('%Y-%m-%d')}
+- Base your risk analysis on what would have been visible to investors on this date
+- Consider historical volatility patterns and market conditions up to this point
+"""
         
         prompt = f"""# Risk Assessment: {ticker} LEAP Trade
 
@@ -884,6 +933,8 @@ class RiskCritic(LLMClient):
 ## Market Context
 - **IV Rank**: {market_data.implied_volatility_rank or 'Unknown'}
 - **Next Earnings**: {earnings_date.strftime('%Y-%m-%d') if earnings_date else 'Unknown'}
+
+{temporal_constraint}
 
 ## Your Task: Play Devil's Advocate
 Identify RED FLAGS and potential issues with this trade:
@@ -913,6 +964,8 @@ Identify RED FLAGS and potential issues with this trade:
 ```
 
 Be harsh. Only approve if this is a genuinely sound trade.
+
+Analysis Date: {analysis_date.strftime('%Y-%m-%d')}
 """
         return prompt
     
