@@ -8,6 +8,9 @@ Usage:
     # Analyze a specific ticker
     python main.py --ticker NVDA --narrative "AI infrastructure play"
     
+    # Analyze multiple tickers
+    python main.py --symbols "NVDA,MSFT,TSLA" --narrative "Tech sector analysis"
+    
     # Export approved trades
     python main.py --export
 """
@@ -39,9 +42,9 @@ def main():
     )
     
     parser.add_argument(
-        "--ticker",
+        "--symbols",
         type=str,
-        help="Analyze a specific ticker (manual mode)"
+        help="Comma-separated list of tickers to analyze (e.g., 'NVDA,MSFT,TSLA')"
     )
     
     parser.add_argument(
@@ -93,7 +96,54 @@ def main():
             print(f"✅ Exported {len(files)} trade cards")
             return
         
-        # Mode 2: Manual single ticker analysis
+        # Mode 2: Batch symbol analysis
+        if args.symbols:
+            symbols = [s.strip().upper() for s in args.symbols.split(',')]
+            print(f"\n📊 Batch Mode: Analyzing {len(symbols)} symbols")
+            print(f"Symbols: {', '.join(symbols)}")
+            
+            successful_analyses = []
+            
+            for i, symbol in enumerate(symbols, 1):
+                print(f"\n{'='*60}")
+                print(f"📈 Analyzing {symbol} ({i}/{len(symbols)})")
+                print(f"{'='*60}")
+                
+                trade_card = orchestrator.analyze_single_ticker(
+                    ticker=symbol,
+                    narrative=args.narrative
+                )
+                
+                if trade_card:
+                    successful_analyses.append(trade_card)
+                    print("\n" + "-"*60)
+                    print(f"✅ {symbol} Analysis Complete")
+                    print("-"*60)
+                    print(trade_card.to_markdown())
+                else:
+                    print(f"\n❌ Analysis failed for {symbol}")
+            
+            # Summary
+            if successful_analyses:
+                print("\n" + "="*60)
+                print(f"📊 BATCH ANALYSIS COMPLETE - {len(successful_analyses)}/{len(symbols)} successful")
+                print("="*60)
+                
+                # Ask if user wants to export
+                response = input("📤 Export successful analyses to markdown? (y/n): ").strip().lower()
+                if response == 'y':
+                    # Export each successful analysis
+                    for card in successful_analyses:
+                        markdown_path = Path(f"./outputs/{card.ticker}_trade_card.md")
+                        markdown_path.parent.mkdir(exist_ok=True)
+                        markdown_path.write_text(card.to_markdown())
+                        print(f"📄 Exported {card.ticker} to {markdown_path}")
+            else:
+                print("\n❌ No analyses completed successfully")
+            
+            return
+        
+        # Mode 3: Manual single ticker analysis
         if args.ticker:
             print(f"\n🎯 Manual Mode: Analyzing {args.ticker}")
             trade_card = orchestrator.analyze_single_ticker(

@@ -20,6 +20,12 @@ class OpenRouterConfig(BaseModel):
     deepseek_v3_model: str = Field(default_factory=lambda: os.getenv("DEEPSEEK_V3_MODEL", "deepseek/deepseek-chat"))
 
 
+class GoogleAIConfig(BaseModel):
+    """Google AI (Gemini) configuration"""
+    api_key: str = Field(default_factory=lambda: os.getenv("GOOGLE_AI_API_KEY", ""))
+    model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
+
+
 class LEAPHeuristics(BaseModel):
     """Trading parameters for LEAP options strategy"""
     min_days_to_expiry: int = Field(default_factory=lambda: int(os.getenv("MIN_DAYS_TO_EXPIRY", "540")))
@@ -43,14 +49,21 @@ class LoggingConfig(BaseModel):
 class Config(BaseModel):
     """Master configuration class"""
     openrouter: OpenRouterConfig = Field(default_factory=OpenRouterConfig)
+    google_ai: GoogleAIConfig = Field(default_factory=GoogleAIConfig)
     leap_heuristics: LEAPHeuristics = Field(default_factory=LEAPHeuristics)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     def validate_api_keys(self) -> bool:
         """Validate that required API keys are present"""
-        if not self.openrouter.api_key:
-            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+        if self.openrouter.api_key:
+            print("✅ Using OpenRouter API")
+            return True
+        elif self.google_ai.api_key:
+            print("✅ Using Google AI (Gemini) - Free for development!")
+            return True
+        else:
+            raise ValueError("No API key found. Set either OPENROUTER_API_KEY or GOOGLE_AI_API_KEY in environment variables")
         return True
 
 
