@@ -1,10 +1,10 @@
 # LEAP Strategic Asset Engine (LSAE)
 
-An AI-powered Python system for discovering and analyzing LEAP options opportunities using a multi-agent architecture.
+An AI-powered Python system for discovering, analyzing, and backtesting LEAP options strategies using a multi-agent architecture with temporal constraints.
 
 ## 🎯 Overview
 
-The LEAP Strategic Asset Engine automates the research and analysis of Long-term Equity AnticiPation Securities (LEAP options) using a **"Buy 1.5yr, Sell 1yr"** strategy. It combines AI-driven market discovery with rigorous quantitative analysis and risk assessment.
+The LEAP Strategic Asset Engine is a comprehensive options trading platform that combines AI-driven market intelligence with rigorous quantitative analysis and professional-grade backtesting. It implements a sophisticated **"Buy 1.5yr, Sell 1yr"** LEAP options strategy while maintaining strict temporal integrity to prevent look-ahead bias.
 
 ### Key Features
 
@@ -12,17 +12,19 @@ The LEAP Strategic Asset Engine automates the research and analysis of Long-term
 - **📊 Automated Options Analysis**: Fetches real-time option chains and Greeks via yfinance
 - **🧮 Chain-of-Thought Reasoning**: DeepSeek R1 performs deep quantitative analysis with **real-time streaming output**
 - **🛡️ Risk Assessment**: DeepSeek V3 acts as "devil's advocate" to identify red flags
-- **💾 Audit Trail**: SQLite database tracks all recommendations and AI reasoning
-- **📄 Trade Cards**: Generates detailed markdown reports with **complete analysis** (no truncation)
+- **📈 Professional Backtesting**: Temporal-constrained historical simulation with realistic assumptions
+- **💾 Complete Audit Trail**: SQLite database tracks all recommendations, AI reasoning, and trade performance
+- **📄 Clear Trade Recommendations**: Generates BUY/SELL recommendations with detailed markdown reports
+- **🎯 Batch Analysis**: Process multiple symbols simultaneously with clear recommendation summaries
 
 ## 🏗️ Architecture
 
-The system features **intelligent thought buffering** for coherent AI reasoning:
+The system features **temporal-constrained AI reasoning** and **professional backtesting capabilities**:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   Orchestrator                          │
-│            (Manages workflow & state)                   │
+│                 Orchestrator                            │
+│          (Workflow & State Management)                  │
 └─────────────────────────────────────────────────────────┘
          │              │              │              │
          ▼              ▼              ▼              ▼
@@ -31,17 +33,49 @@ The system features **intelligent thought buffering** for coherent AI reasoning:
 │    Scout    │ │    Data     │ │  Reasoning  │ │   Critic    │
 │   (Grok)    │ │  (yfinance) │ │(DeepSeek R1)│ │(DeepSeek V3)│
 │             │ │             │ │  Streaming  │ │             │
-│             │ │             │ │   Output    │ │             │
+│ Temporal    │ │ Real-time   │ │ Chain-of-   │ │ Devil's     │
+│ Constrained │ │ Options     │ │ Thought     │ │ Advocate    │
 └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
          │              │              │              │
          └──────────────┴──────────────┴──────────────┴──────────────┘
-                            │
-                            ▼
-                    ┌───────────────┐
-                    │   Database    │
-                    │   (SQLite)    │
-                    └───────────────┘
+                            │              │
+                            ▼              ▼
+                    ┌───────────────┐ ┌───────────────┐
+                    │   Backtesting │ │   Database    │
+                    │   Engine      │ │   (SQLite)    │
+                    │               │ │               │
+                    │ Temporal      │ │ Audit Trail   │
+                    │ Constraints   │ │ & Performance │
+                    └───────────────┘ └───────────────┘
+                            │              │
+                            └──────────────┴──────────────┘
+                                       │
+                                       ▼
+                            ┌─────────────────────┐
+                            │   Output Engine     │
+                            │                     │
+                            │ BUY/SELL            │
+                            │ Recommendations     │
+                            └─────────────────────┘
 ```
+
+### Core Components
+
+**🤖 AI Agent Layer**
+- **Discovery Scout**: Scans for trending assets with temporal awareness
+- **Quant Reasoning Engine**: Deep quantitative analysis with scenario modeling
+- **Risk Critic**: Comprehensive risk assessment and red flag identification
+- **Market Data Client**: Real-time options data and technical analysis
+
+**📈 Backtesting Layer**
+- **Temporal Constraints**: Prevents look-ahead bias in historical simulations
+- **Realistic Assumptions**: Transaction costs, slippage, position sizing
+- **Performance Analytics**: Sharpe ratio, drawdown, win rates
+
+**💾 Persistence Layer**
+- **SQLite Database**: Complete audit trail of recommendations and reasoning
+- **Trade Cards**: Detailed markdown reports with full analysis
+- **Performance Tracking**: Historical vs. projected return comparisons
 
 ## 📦 Installation
 
