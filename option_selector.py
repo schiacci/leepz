@@ -151,7 +151,9 @@ class OptionSelector:
             # IV percentile filter
             if contract.implied_volatility:
                 # Convert IV to percentile estimate (simplified)
-                iv_percentile = min(100, contract.implied_volatility * 100)
+                # implied_volatility is already a decimal (0.72 = 72%), so just use it
+                iv_percentile = contract.implied_volatility * 100
+                
                 if iv_percentile > max_iv_percentile:
                     print(f"    ❌ Contract {i}: IV {iv_percentile:.1f}% > max {max_iv_percentile}%")
                     continue
@@ -184,41 +186,107 @@ class OptionSelector:
         target_delta: float,
         risk_tolerance: str
     ) -> List[Tuple[OptionContract, float]]:
-        """Score contracts based on multiple factors"""
+        """Score contracts based on comprehensive weighted model"""
+        from quant_calculations import get_market_regime
+        
         scored = []
+        current_regime = get_market_regime()
+        
+        print(f"  🔍 Scoring {len(contracts)} contracts with regime: {current_regime}")
         
         for contract in contracts:
             score = 0.0
             
-            # Delta proximity (30% weight)
+            # 1. Delta proximity (25% weight) - Most important for LEAPs
             delta_score = 1.0 - abs(contract.delta - target_delta)
-            score += delta_score * 0.30
+            score += delta_score * 0.25
             
-            # Time to expiration (20% weight)
-            # Optimal range is 18-24 months for LEAPs
-            optimal_dte = 540  # 18 months
-            dte_score = 1.0 - abs(contract.days_to_expiry - optimal_dte) / 365
-            score += max(0, dte_score) * 0.20
+            # 2. Regime-aware expiration scoring (25% weight)
+            dte_score = self._calculate_regime_aware_dte_score(
+                contract.days_to_expiry, current_regime
+            )
+            score += dte_score * 0.25
             
-            # Liquidity (15% weight)
-            liquidity_score = 1.0 - (contract.bid_ask_spread_pct / 10.0)  # Normalize to 0-1
-            score += max(0, liquidity_score) * 0.15
+            # 3. Liquidity (15% weight) - Important for execution
+            liquidity_score = max(0, 1.0 - (contract.bid_ask_spread_pct / 10.0))
+            score += liquidity_score * 0.15
             
-            # IV level (15% weight)
+            # 4. IV level (15% weight) - Lower IV = better value
             if contract.implied_volatility:
-                # Lower IV is better for LEAPs
                 iv_score = max(0, 1.0 - contract.implied_volatility)
                 score += iv_score * 0.15
+            else:
+                score += 0.0  # No IV data = neutral score
             
-            # Risk-adjusted return potential (20% weight)
+            # 5. Moneyness (10% weight) - ITM preference for LEAPs
+            moneyness_score = self._calculate_moneyness_score(contract, market_data)
+            score += moneyness_score * 0.10
+            
+            # 6. Risk-adjusted return potential (10% weight)
             return_score = self._calculate_return_potential(contract, market_data, risk_tolerance)
-            score += return_score * 0.20
+            score += return_score * 0.10
             
             scored.append((contract, score))
         
         # Sort by score (descending)
         scored.sort(key=lambda x: x[1], reverse=True)
+        
+        print(f"  🔍 Top 3 scored contracts:")
+        for i, (contract, score) in enumerate(scored[:3]):
+            print(f"    {i+1}. ${contract.strike} {contract.expiration.strftime('%b %Y')} - Score: {score:.3f}")
+        
         return scored
+    
+    def _calculate_regime_aware_dte_score(self, dte: int, regime: str) -> float:
+        """Calculate DTE score based on market regime"""
+        
+        if regime == "RISK_ON":
+            # RISK_ON: Prefer 12-24 months for optimal LEAP strategy
+            optimal_min, optimal_max = 365, 730
+        elif regime == "TRANSITION":
+            # TRANSITION: Prefer longer expirations to wait out uncertainty
+            optimal_min, optimal_max = 540, 1095  # 18-36 months
+        else:  # RISK_OFF (shouldn't reach here due to filter)
+            optimal_min, optimal_max = 730, 1095  # 24-36 months
+        
+        # Score based on how close to optimal range
+        if optimal_min <= dte <= optimal_max:
+            # Perfect range - score based on center preference
+            center = (optimal_min + optimal_max) / 2
+            distance_from_center = abs(dte - center) / (optimal_max - optimal_min)
+            return 1.0 - distance_from_center * 0.5
+        elif dte < optimal_min:
+            # Too short - penalize heavily
+            penalty = (optimal_min - dte) / optimal_min
+            return max(0, 0.3 - penalty * 0.3)
+        else:
+            # Too long - penalize moderately
+            penalty = (dte - optimal_max) / optimal_max
+            return max(0, 0.7 - penalty * 0.7)
+    
+    def _calculate_moneyness_score(self, contract: OptionContract, market_data: MarketData) -> float:
+        """Calculate moneyness score - ITM preferred for LEAPs"""
+        if not contract.last_price or not contract.strike:
+            return 0.5  # Neutral if missing data
+        
+        moneyness = contract.strike / contract.last_price
+        
+        if contract.in_the_money:
+            # ITM - score based on how deep ITM
+            if moneyness < 0.8:  # Deep ITM
+                return 1.0
+            elif moneyness < 0.95:  # Moderate ITM
+                return 0.8
+            else:  # Slightly ITM
+                return 0.6
+        else:
+            # OTM - penalize based on how far OTM
+            if moneyness < 1.05:  # Slightly OTM
+                return 0.4
+            elif moneyness < 1.15:  # Moderately OTM
+                return 0.2
+            else:  # Far OTM
+                return 0.0
     
     def _calculate_return_potential(
         self,

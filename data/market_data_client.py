@@ -226,7 +226,7 @@ class MarketDataClient:
             # Sort by delta (closest to 0.80 first)
             leap_contracts.sort(key=lambda x: abs(x.delta - self.leap_heuristics.target_delta))
             
-            return leap_contracts[:10]  # Return top 10 candidates
+            return leap_contracts  # Return ALL suitable contracts
             
         except Exception as e:
             print(f"❌ Error fetching LEAP options: {e}")

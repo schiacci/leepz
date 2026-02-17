@@ -404,7 +404,6 @@ def main():
         # Backtesting mode (existing functionality)
         elif args.backtest:
             from backtesting_engine import BacktestEngine
-            from datetime import datetime
 
             print("\n📊 Starting LEAP Options Backtesting")
             print("="*60)
