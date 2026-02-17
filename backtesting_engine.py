@@ -594,3 +594,313 @@ class BacktestEngine:
             positions=self.positions,
             trades_executed=self.trades_executed
         )
+
+    def calculate_max_historical_drawdown(self, symbols: List[str]) -> Dict[str, any]:
+        """
+        Calculate maximum historical drawdown for risk assessment
+        
+        Args:
+            symbols: List of stock symbols to analyze
+        
+        Returns:
+            Dictionary with drawdown analysis and risk tiers
+        """
+        try:
+            print(f"📊 Analyzing historical drawdowns for {len(symbols)} symbols...")
+            
+            drawdown_analysis = {}
+            
+            for symbol in symbols:
+                try:
+                    # Get 5 years of historical data for comprehensive analysis
+                    stock = yf.Ticker(symbol)
+                    hist = stock.history(period="5y")
+                    
+                    if hist.empty:
+                        print(f"⚠️ No historical data for {symbol}")
+                        continue
+                    
+                    # Calculate rolling drawdowns for different periods
+                    close_prices = hist['Close']
+                    
+                    # 1-year rolling drawdown
+                    rolling_1y = close_prices.rolling(window=252).max()
+                    drawdown_1y = ((close_prices - rolling_1y) / rolling_1y) * 100
+                    max_drawdown_1y = drawdown_1y.min()
+                    
+                    # 6-month rolling drawdown
+                    rolling_6m = close_prices.rolling(window=126).max()
+                    drawdown_6m = ((close_prices - rolling_6m) / rolling_6m) * 100
+                    max_drawdown_6m = drawdown_6m.min()
+                    
+                    # 3-month rolling drawdown
+                    rolling_3m = close_prices.rolling(window=63).max()
+                    drawdown_3m = ((close_prices - rolling_3m) / rolling_3m) * 100
+                    max_drawdown_3m = drawdown_3m.min()
+                    
+                    # Worst 1-year return period
+                    returns_1y = close_prices.pct_change(periods=252).dropna()
+                    worst_1y_return = returns_1y.min() * 100 if not returns_1y.empty else 0
+                    
+                    # Calculate expected option loss under worst scenario
+                    # Assume LEAP call with 0.7 delta loses 70% of stock move
+                    expected_option_loss = abs(max_drawdown_1y) * 0.7
+                    
+                    # Determine risk tier
+                    if abs(max_drawdown_1y) > 50:
+                        risk_tier = "HIGH"
+                    elif abs(max_drawdown_1y) > 30:
+                        risk_tier = "MODERATE"
+                    else:
+                        risk_tier = "LOW"
+                    
+                    # Calculate volatility metrics
+                    daily_returns = close_prices.pct_change().dropna()
+                    volatility = daily_returns.std() * np.sqrt(252) * 100
+                    
+                    # Calculate recovery time (days to recover from max drawdown)
+                    max_dd_idx = drawdown_1y.idxmin()
+                    recovery_data = close_prices.loc[max_dd_idx:]
+                    recovery_time = 0
+                    peak_price = rolling_1y.loc[max_dd_idx]
+                    
+                    for price in recovery_data:
+                        if price >= peak_price:
+                            break
+                        recovery_time += 1
+                    
+                    drawdown_analysis[symbol] = {
+                        'max_drawdown_1y': round(max_drawdown_1y, 2),
+                        'max_drawdown_6m': round(max_drawdown_6m, 2),
+                        'max_drawdown_3m': round(max_drawdown_3m, 2),
+                        'worst_1y_return': round(worst_1y_return, 2),
+                        'expected_option_loss': round(expected_option_loss, 2),
+                        'risk_tier': risk_tier,
+                        'volatility': round(volatility, 2),
+                        'recovery_days': recovery_time,
+                        'current_price': close_prices.iloc[-1],
+                        'analysis_period': f"{hist.index[0].date()} to {hist.index[-1].date()}"
+                    }
+                    
+                    print(f"✅ {symbol}: Max DD 1Y = {max_drawdown_1y:.1f}%, Risk Tier = {risk_tier}")
+                    
+                except Exception as e:
+                    print(f"❌ Error analyzing {symbol}: {e}")
+                    drawdown_analysis[symbol] = {'error': str(e)}
+            
+            # Portfolio-level analysis
+            if drawdown_analysis:
+                portfolio_analysis = self._calculate_portfolio_drawdown_risk(drawdown_analysis)
+            else:
+                portfolio_analysis = {}
+            
+            return {
+                'individual_analysis': drawdown_analysis,
+                'portfolio_analysis': portfolio_analysis,
+                'analysis_timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            print(f"❌ Error in drawdown analysis: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_portfolio_drawdown_risk(self, drawdown_analysis: Dict[str, any]) -> Dict[str, any]:
+        """Calculate portfolio-level drawdown risk metrics"""
+        try:
+            # Filter out error entries
+            valid_analysis = {k: v for k, v in drawdown_analysis.items() if 'error' not in v}
+            
+            if not valid_analysis:
+                return {'error': 'No valid data for portfolio analysis'}
+            
+            # Aggregate metrics
+            max_drawdowns = [v['max_drawdown_1y'] for v in valid_analysis.values()]
+            option_losses = [v['expected_option_loss'] for v in valid_analysis.values()]
+            volatilities = [v['volatility'] for v in valid_analysis.values()]
+            
+            portfolio_metrics = {
+                'avg_max_drawdown': round(np.mean(max_drawdowns), 2),
+                'worst_max_drawdown': round(max(max_drawdowns), 2),
+                'avg_expected_option_loss': round(np.mean(option_losses), 2),
+                'worst_expected_option_loss': round(max(option_losses), 2),
+                'avg_volatility': round(np.mean(volatilities), 2),
+                'portfolio_volatility': round(np.std(volatilities), 2),
+                'num_symbols_analyzed': len(valid_analysis)
+            }
+            
+            # Risk distribution
+            risk_tiers = [v['risk_tier'] for v in valid_analysis.values()]
+            risk_distribution = {
+                'HIGH': risk_tiers.count('HIGH'),
+                'MODERATE': risk_tiers.count('MODERATE'),
+                'LOW': risk_tiers.count('LOW')
+            }
+            
+            # Portfolio risk tier (based on worst individual risk)
+            if risk_distribution['HIGH'] > 0:
+                portfolio_risk_tier = "HIGH"
+            elif risk_distribution['MODERATE'] > len(valid_analysis) * 0.5:
+                portfolio_risk_tier = "MODERATE"
+            else:
+                portfolio_risk_tier = "LOW"
+            
+            # Risk recommendations
+            recommendations = []
+            if portfolio_metrics['worst_expected_option_loss'] > 40:
+                recommendations.append("Consider reducing position sizes due to high potential option losses")
+            
+            if portfolio_metrics['avg_max_drawdown'] > 35:
+                recommendations.append("High average drawdown - ensure adequate capital reserves")
+            
+            if risk_distribution['HIGH'] > len(valid_analysis) * 0.3:
+                recommendations.append("Portfolio concentration in high-risk symbols - consider diversification")
+            
+            if portfolio_metrics['portfolio_volatility'] > 25:
+                recommendations.append("High portfolio volatility - consider lower-beta stocks")
+            
+            return {
+                'metrics': portfolio_metrics,
+                'risk_distribution': risk_distribution,
+                'portfolio_risk_tier': portfolio_risk_tier,
+                'recommendations': recommendations
+            }
+            
+        except Exception as e:
+            return {'error': f'Portfolio analysis failed: {str(e)}'}
+    
+    def simulate_stress_scenarios(self, symbols: List[str]) -> Dict[str, any]:
+        """
+        Simulate stress scenarios for portfolio risk assessment
+        
+        Args:
+            symbols: List of stock symbols to stress test
+        
+        Returns:
+            Dictionary with stress test results
+        """
+        try:
+            print(f"🔥 Running stress scenarios for {len(symbols)} symbols...")
+            
+            # Define stress scenarios
+            stress_scenarios = {
+                'market_crash': {'market_drop': -0.30, 'volatility_spike': 2.0, 'description': '30% market crash with 2x volatility'},
+                'correction': {'market_drop': -0.15, 'volatility_spike': 1.5, 'description': '15% correction with 1.5x volatility'},
+                'bear_market': {'market_drop': -0.40, 'volatility_spike': 1.8, 'description': '40% bear market with elevated volatility'},
+                'flash_crash': {'market_drop': -0.10, 'volatility_spike': 3.0, 'description': '10% flash crash with 3x volatility spike'}
+            }
+            
+            stress_results = {}
+            
+            for symbol in symbols:
+                try:
+                    # Get current data
+                    stock = yf.Ticker(symbol)
+                    current_price = stock.info.get('currentPrice', 0)
+                    
+                    if current_price == 0:
+                        continue
+                    
+                    # Get historical volatility
+                    hist = stock.history(period="1y")
+                    if hist.empty:
+                        continue
+                    
+                    daily_returns = hist['Close'].pct_change().dropna()
+                    base_volatility = daily_returns.std() * np.sqrt(252)
+                    
+                    symbol_results = {}
+                    
+                    for scenario_name, scenario_params in stress_scenarios.items():
+                        # Calculate stressed price
+                        stressed_price = current_price * (1 + scenario_params['market_drop'])
+                        stressed_volatility = base_volatility * scenario_params['volatility_spike']
+                        
+                        # Simulate LEAP option impact (assuming 0.7 delta LEAP calls)
+                        option_loss_pct = abs(scenario_params['market_drop']) * 0.7
+                        option_volatility_impact = (stressed_volatility - base_volatility) * 0.5
+                        
+                        # Total expected option loss
+                        total_option_loss = option_loss_pct + option_volatility_impact
+                        
+                        symbol_results[scenario_name] = {
+                            'stock_price_change': scenario_params['market_drop'] * 100,
+                            'stressed_stock_price': round(stressed_price, 2),
+                            'volatility_multiplier': scenario_params['volatility_spike'],
+                            'stressed_volatility': round(stressed_volatility * 100, 2),
+                            'expected_option_loss': round(total_option_loss * 100, 2),
+                            'description': scenario_params['description']
+                        }
+                    
+                    stress_results[symbol] = {
+                        'current_price': current_price,
+                        'base_volatility': round(base_volatility * 100, 2),
+                        'scenarios': symbol_results
+                    }
+                    
+                except Exception as e:
+                    print(f"❌ Error stress testing {symbol}: {e}")
+                    stress_results[symbol] = {'error': str(e)}
+            
+            # Aggregate stress results
+            if stress_results:
+                portfolio_stress = self._aggregate_stress_results(stress_results)
+            else:
+                portfolio_stress = {}
+            
+            return {
+                'individual_stress': stress_results,
+                'portfolio_stress': portfolio_stress,
+                'scenarios_tested': list(stress_scenarios.keys()),
+                'analysis_timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            print(f"❌ Error in stress testing: {e}")
+            return {'error': str(e)}
+    
+    def _aggregate_stress_results(self, stress_results: Dict[str, any]) -> Dict[str, any]:
+        """Aggregate individual stress results into portfolio view"""
+        try:
+            valid_results = {k: v for k, v in stress_results.items() if 'error' not in v}
+            
+            if not valid_results:
+                return {'error': 'No valid stress test results'}
+            
+            scenarios = list(next(iter(valid_results.values()))['scenarios'].keys())
+            portfolio_summary = {}
+            
+            for scenario in scenarios:
+                option_losses = []
+                stock_losses = []
+                
+                for symbol_data in valid_results.values():
+                    scenario_data = symbol_data['scenarios'][scenario]
+                    option_losses.append(scenario_data['expected_option_loss'])
+                    stock_losses.append(abs(scenario_data['stock_price_change']))
+                
+                portfolio_summary[scenario] = {
+                    'avg_option_loss': round(np.mean(option_losses), 2),
+                    'worst_option_loss': round(max(option_losses), 2),
+                    'avg_stock_loss': round(np.mean(stock_losses), 2),
+                    'worst_stock_loss': round(max(stock_losses), 2),
+                    'symbols_affected': len(valid_results)
+                }
+            
+            # Overall risk assessment
+            worst_case_loss = max(summary['worst_option_loss'] for summary in portfolio_summary.values())
+            avg_case_loss = np.mean([summary['avg_option_loss'] for summary in portfolio_summary.values()])
+            
+            risk_assessment = {
+                'worst_case_option_loss': round(worst_case_loss, 2),
+                'average_case_option_loss': round(avg_case_loss, 2),
+                'risk_level': 'EXTREME' if worst_case_loss > 50 else 'HIGH' if worst_case_loss > 35 else 'MODERATE' if worst_case_loss > 20 else 'LOW',
+                'diversification_benefit': round(worst_case_loss - avg_case_loss, 2)
+            }
+            
+            return {
+                'scenario_summary': portfolio_summary,
+                'risk_assessment': risk_assessment
+            }
+            
+        except Exception as e:
+            return {'error': f'Aggregation failed: {str(e)}'}

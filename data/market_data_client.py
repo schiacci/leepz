@@ -151,6 +151,28 @@ class MarketDataClient:
                             if filtered_count == 0 and len(leap_contracts) < 3:
                                 print(f"    📐 Estimated delta {delta:.2f} for strike ${row['strike']} (ratio: {strike_to_spot_ratio:.2f})")
                         
+                        # Handle NaN values in volume and other fields
+                        volume = row.get('volume')
+                        open_interest = row.get('openInterest')
+                        gamma = row.get('gamma')
+                        theta = row.get('theta')
+                        vega = row.get('vega')
+                        implied_vol = row.get('impliedVolatility')
+                        
+                        # Convert NaN to None for Pydantic validation
+                        if pd.isna(volume):
+                            volume = None
+                        if pd.isna(open_interest):
+                            open_interest = None
+                        if pd.isna(gamma):
+                            gamma = None
+                        if pd.isna(theta):
+                            theta = None
+                        if pd.isna(vega):
+                            vega = None
+                        if pd.isna(implied_vol):
+                            implied_vol = None
+                        
                         # Only consider calls close to target delta (0.80)
                         # Allow range of 0.70 - 0.90 for flexibility
                         if 0.70 <= delta <= 0.90:
@@ -165,12 +187,12 @@ class MarketDataClient:
                                 ask=ask,
                                 bid_ask_spread_pct=bid_ask_spread_pct,
                                 delta=delta,
-                                gamma=row.get('gamma'),
-                                theta=row.get('theta'),
-                                vega=row.get('vega'),
-                                implied_volatility=row.get('impliedVolatility'),
-                                volume=row.get('volume'),
-                                open_interest=row.get('openInterest'),
+                                gamma=gamma,
+                                theta=theta,
+                                vega=vega,
+                                implied_volatility=implied_vol,
+                                volume=volume,
+                                open_interest=open_interest,
                                 in_the_money=row['strike'] < spot_price
                             )
                             leap_contracts.append(contract)
@@ -212,16 +234,12 @@ class MarketDataClient:
     
     def _calculate_iv_rank(self, stock: yf.Ticker) -> Optional[float]:
         """
-        Calculate implied volatility rank (IV percentile over 52 weeks)
+        Calculate implied volatility percentile (IV rank over 52 weeks)
         
         Returns:
             Float between 0-100 representing IV percentile
         """
         try:
-            # Get historical options data (this is tricky with yfinance)
-            # For now, we'll use a simplified approach
-            # In production, you'd want to track historical IV data
-            
             # Get current IV from ATM options
             expirations = stock.options
             if not expirations:
@@ -239,13 +257,161 @@ class MarketDataClient:
             atm_option = calls.iloc[(calls['strike'] - current_price).abs().argsort()[:1]]
             current_iv = atm_option['impliedVolatility'].values[0] if not atm_option.empty else None
             
-            # For simplicity, return 50 if we can't calculate historical range
-            # In production, you'd maintain a database of historical IV
-            return 50.0  # Placeholder
+            if current_iv is None:
+                return None
+            
+            # Get historical IV data for percentile calculation
+            # We'll use a proxy approach with historical price volatility
+            hist = stock.history(period="1y")
+            if hist.empty:
+                return 50.0  # Default if no history
+            
+            # Calculate historical volatility (annualized)
+            returns = hist['Close'].pct_change().dropna()
+            historical_vol = returns.std() * np.sqrt(252)
+            
+            # For simplicity, we'll estimate IV percentile based on current IV vs historical vol
+            # In production, you'd maintain a database of historical IV values
+            
+            # Get VIX for market context
+            try:
+                vix = yf.Ticker("^VIX")
+                vix_current = vix.history(period="1mo")['Close'].iloc[-1]
+                vix_hist = vix.history(period="1y")['Close']
+                vix_percentile = (vix_hist < vix_current).mean() * 100
+            except:
+                vix_percentile = 50.0
+            
+            # Estimate IV percentile using multiple factors
+            # This is a simplified approach - production would use actual IV history
+            
+            # Factor 1: Current IV vs historical volatility
+            vol_ratio = current_iv / historical_vol if historical_vol > 0 else 1.0
+            vol_score = min(100, max(0, (vol_ratio - 0.5) * 100))  # Scale to 0-100
+            
+            # Factor 2: Market volatility context (VIX percentile)
+            market_adjustment = vix_percentile - 50  # Positive when VIX is high
+            
+            # Combine factors
+            iv_percentile = vol_score + market_adjustment * 0.3
+            
+            # Ensure within bounds
+            iv_percentile = max(0, min(100, iv_percentile))
+            
+            return round(iv_percentile, 1)
             
         except Exception as e:
             print(f"⚠️ Error calculating IV rank: {e}")
             return None
+    
+    def get_historical_iv_data(self, ticker: str) -> Dict[str, any]:
+        """
+        Get historical IV data for more accurate percentile calculation
+        
+        Returns:
+            Dictionary with IV history and percentile data
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            
+            # Get current IV
+            current_iv = self._get_current_iv(stock)
+            if current_iv is None:
+                return {'error': 'Could not fetch current IV'}
+            
+            # Get historical price data for volatility calculation
+            hist = stock.history(period="2y")  # 2 years for better percentile
+            if hist.empty:
+                return {'error': 'No historical data available'}
+            
+            # Calculate rolling historical volatility
+            returns = hist['Close'].pct_change().dropna()
+            
+            # Calculate 30-day rolling volatility
+            rolling_vol_30d = returns.rolling(window=30).std() * np.sqrt(252)
+            
+            # Get percentiles
+            vol_percentiles = {
+                'p25': rolling_vol_30d.quantile(0.25),
+                'p50': rolling_vol_30d.quantile(0.50),
+                'p75': rolling_vol_30d.quantile(0.75),
+                'p90': rolling_vol_30d.quantile(0.90),
+                'current': rolling_vol_30d.iloc[-1] if not rolling_vol_30d.empty else None
+            }
+            
+            # Estimate IV percentile based on historical volatility distribution
+            if vol_percentiles['current']:
+                iv_percentile = (rolling_vol_30d < current_iv).mean() * 100
+            else:
+                iv_percentile = 50.0
+            
+            # Get market context
+            market_context = self._get_market_volatility_context()
+            
+            return {
+                'current_iv': current_iv,
+                'iv_percentile': round(iv_percentile, 1),
+                'historical_vol_percentiles': vol_percentiles,
+                'market_context': market_context,
+                'data_points': len(rolling_vol_30d.dropna()),
+                'period_days': len(hist)
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Error getting historical IV data: {e}")
+            return {'error': str(e)}
+    
+    def _get_current_iv(self, stock: yf.Ticker) -> Optional[float]:
+        """Get current IV from ATM options"""
+        try:
+            expirations = stock.options
+            if not expirations:
+                return None
+            
+            option_chain = stock.option_chain(expirations[0])
+            calls = option_chain.calls
+            
+            if calls.empty:
+                return None
+            
+            current_price = stock.info.get('currentPrice', 0)
+            atm_option = calls.iloc[(calls['strike'] - current_price).abs().argsort()[:1]]
+            
+            return atm_option['impliedVolatility'].values[0] if not atm_option.empty else None
+            
+        except Exception:
+            return None
+    
+    def _get_market_volatility_context(self) -> Dict[str, any]:
+        """Get market volatility context for IV adjustment"""
+        try:
+            # VIX data
+            vix = yf.Ticker("^VIX")
+            vix_hist = vix.history(period="1y")
+            
+            if vix_hist.empty:
+                return {'vix_percentile': 50}
+            
+            vix_current = vix_hist['Close'].iloc[-1]
+            vix_percentile = (vix_hist['Close'] < vix_current).mean() * 100
+            
+            # VIX futures term structure (if available)
+            try:
+                vix_futures = yf.Ticker("^VIX")
+                # This would need enhancement for actual VIX futures data
+                term_structure = 'NORMAL'  # Placeholder
+            except:
+                term_structure = 'UNKNOWN'
+            
+            return {
+                'vix_current': vix_current,
+                'vix_percentile': round(vix_percentile, 1),
+                'vix_status': 'LOW' if vix_current < 20 else 'HIGH' if vix_current > 30 else 'NORMAL',
+                'term_structure': term_structure
+            }
+            
+        except Exception:
+            return {'vix_percentile': 50}
     
     def get_earnings_date(self, ticker: str) -> Optional[datetime]:
         """
