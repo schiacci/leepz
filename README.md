@@ -12,10 +12,14 @@ The LEAP Strategic Asset Engine is a comprehensive options trading platform that
 - **📊 Automated Options Analysis**: Fetches real-time option chains and Greeks via yfinance
 - **🧮 Chain-of-Thought Reasoning**: DeepSeek R1 performs deep quantitative analysis with **real-time streaming output**
 - **🛡️ Risk Assessment**: DeepSeek V3 acts as "devil's advocate" to identify red flags
+- **🤖 Multi-LLM Consensus**: Sequential analysis with multiple providers (OpenRouter, Gemini) building on each other's insights
+- **🧠 Intelligent Model Selection**: User-configurable sentiment models with early stopping based on confidence thresholds
+- **🛠️ Development Mode**: Mock responses for testing without burning API credits
 - **📈 Professional Backtesting**: Temporal-constrained historical simulation with realistic assumptions
 - **💾 Complete Audit Trail**: SQLite database tracks all recommendations, AI reasoning, and trade performance
 - **📄 Clear Trade Recommendations**: Generates BUY/SELL recommendations with detailed markdown reports
 - **🎯 Batch Analysis**: Process multiple symbols simultaneously with clear recommendation summaries
+- **🔄 Hybrid Approach**: Combines quantitative rigor with AI insights, with graceful fallback to pure analysis
 
 ## 🏗️ Architecture
 
@@ -66,6 +70,7 @@ The system features **temporal-constrained AI reasoning** and **professional bac
 - **Quant Reasoning Engine**: Deep quantitative analysis with scenario modeling
 - **Risk Critic**: Comprehensive risk assessment and red flag identification
 - **Market Data Client**: Real-time options data and technical analysis
+- **LLM-Enhanced Selector**: Optional AI-powered analysis with sentiment and catalyst detection
 
 **📈 Backtesting Layer**
 - **Temporal Constraints**: Prevents look-ahead bias in historical simulations
@@ -77,12 +82,18 @@ The system features **temporal-constrained AI reasoning** and **professional bac
 - **Trade Cards**: Detailed markdown reports with full analysis
 - **Performance Tracking**: Historical vs. projected return comparisons
 
+**🔧 Analysis Modes**
+- **Pure Quantitative**: Rule-based scoring with weighted factors (Delta, DTE, IV, Liquidity)
+- **LLM-Enhanced**: Quantitative analysis + AI insights (sentiment, catalysts, confidence)
+- **Hybrid Approach**: Best of both worlds with graceful fallback to quantitative analysis
+
 ## 📦 Installation
 
 ### Prerequisites
 
 - Python 3.11 or higher
 - OpenRouter API key ([Get one here](https://openrouter.ai))
+- Grok API key (optional, for LLM-enhanced analysis - [Get one here](https://console.x.ai/))
 
 ### Virtual Environment Setup (Recommended)
 
@@ -115,7 +126,9 @@ pip install -r requirements.txt
 3. **Configure environment**
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENROUTER_API_KEY
+# Edit .env and add your API keys:
+# - OPENROUTER_API_KEY (required for orchestrator.py)
+# - GROK_API_KEY (optional, for LLM-enhanced analysis in main.py)
 ```
 
 4. **Create required directories**
@@ -150,7 +163,66 @@ Analyze a specific ticker with a custom thesis:
 python main.py --ticker NVDA --narrative "AI infrastructure leader benefiting from GPU demand"
 ```
 
-### Mode 3: Export Approved Trades
+### Mode 3: Enhanced Symbol Analysis with Multi-LLM Consensus
+
+Analyze specific symbols with AI-powered multi-LLM consensus:
+
+```bash
+# Standard quantitative analysis
+python main.py --symbols NVDA,AAPL,MSFT --min-score 0.65 --max-iv-percentile 85
+
+# Multi-LLM consensus analysis (default: OpenRouter + Gemini)
+python main.py --symbols NVDA,AAPL,MSFT --llm-enhanced on --min-score 0.65 --max-iv-percentile 85
+
+# Custom providers and sentiment model
+python main.py --symbols NVDA --llm-enhanced on --llm-providers openrouter,gemini --llm-sentiment-model deepseek/deepseek-r1
+
+# Development mode (no API calls)
+python main.py --symbols NVDA --llm-enhanced on --llm-providers openrouter,gemini --dev-mode
+```
+
+**Enhanced Analysis Options:**
+- `--symbols "NVDA,AAPL,MSFT"`: Comma-separated list of symbols to analyze
+- `--llm-enhanced on/off`: Enable multi-LLM consensus analysis (default: off)
+- `--llm-providers "openrouter,gemini"`: Comma-separated LLM providers (default: openrouter,gemini)
+- `--llm-sentiment-model "x-ai/grok-beta"`: OpenRouter model for sentiment analysis (default: grok-beta)
+- `--dev-mode`: Use mock responses instead of real API calls (for development)
+- `--min-score 0.65`: Minimum quantitative score threshold (default: 0.65)
+- `--max-iv-percentile 85`: Maximum implied volatility percentile (default: 85)ore 0.65`: Minimum weighted score threshold (default: 0.65)
+- `--max-iv-percentile 85`: Maximum implied volatility percentile (default: 70)
+- `--target-delta 0.7`: Target delta for LEAP selection (default: 0.7)
+- `--regime-filter on/off`: Enable market regime filtering (default: on)
+- `--portfolio-size 250000`: Portfolio size for allocation calculations
+- `--export`: Export results to markdown file
+- `--verbose`: Detailed output with filtering and scoring debug
+
+**Multi-LLM Consensus Features (when `--llm-enhanced on`):**
+- **🤖 Sequential Analysis**: Multiple LLMs analyze sequentially, each building on previous insights
+- **🧠 Consensus Building**: LLMs can AGREE, DISAGREE, or REFINE previous analysis
+- **🎯 Early Stopping**: Stops when confidence threshold reached (default: 0.85) or max iterations (default: 3)
+- **📊 Confidence-Weighted Scoring**: Higher confidence LLMs have more influence on final score
+- **🔄 Provider Flexibility**: Support for OpenRouter, Gemini, and future providers
+- **�️ Development Mode**: Mock responses for testing without API costs
+- **📈 Enhanced Scoring**: Combines quantitative analysis with AI sentiment and catalyst detection
+- **📊 Dynamic Scoring**: Adjusts quantitative scores based on AI insights
+- **🛡️ Risk Factor Analysis**: AI identifies company-specific and market risks
+- **💡 Confidence Scoring**: LLM provides confidence levels for recommendations
+- **📝 Natural Language Explanations**: AI-generated narratives for investment theses
+
+**Example - Enhanced MAG7 Analysis:**
+```bash
+python main.py --symbols AAPL,MSFT,GOOGL,AMZN,TSLA,META,NVDA \
+    --llm-enhanced on \
+    --min-score 0.65 \
+    --max-iv-percentile 85 \
+    --target-delta 0.7 \
+    --regime-filter on \
+    --portfolio-size 250000 \
+    --export \
+    --verbose
+```
+
+### Mode 4: Export Approved Trades
 
 Export all approved recommendations to markdown:
 
@@ -158,7 +230,7 @@ Export all approved recommendations to markdown:
 python main.py --export
 ```
 
-### Mode 4: Backtesting (Temporal-Constrained Historical Simulation)
+### Mode 5: Backtesting (Temporal-Constrained Historical Simulation)
 
 Run professional-grade LEAP options backtesting with temporal constraints to prevent look-ahead bias:
 
@@ -236,6 +308,72 @@ The engine evaluates options based on these criteria:
 ### Trade Card (Markdown)
 
 See [example trade card](docs/example_trade_card.md) for a full markdown export.
+
+## 🤖 LLM-Enhanced Analysis Features
+
+When using `--llm-enhanced on`, the system integrates Grok AI for advanced market intelligence:
+
+### Enhanced Scoring Model
+
+The LLM-enhanced selector combines quantitative analysis with AI insights:
+
+```
+Base Quantitative Score: 0.750
+├── Sentiment Adjustment: +0.10 (positive market sentiment)
+├── Confidence Factor: 1.15 (high confidence in catalysts)
+└── Final Enhanced Score: 0.863
+```
+
+### AI-Powered Insights
+
+**📊 Sentiment Analysis**
+- Real-time market sentiment scoring (0.0-1.0)
+- Social media trend analysis
+- News sentiment aggregation
+- Market mood indicators
+
+**🚀 Catalyst Detection**
+- Upcoming earnings calls
+- Product launches and events
+- Analyst recommendation changes
+- Sector rotation patterns
+
+**🛡️ Risk Factor Analysis**
+- Company-specific risks
+- Market-wide concerns
+- Regulatory considerations
+- Competitive landscape changes
+
+**💡 Confidence Scoring**
+- LLM confidence in analysis (0.0-1.0)
+- Data quality assessment
+- Market condition certainty
+- Recommendation reliability
+
+### Example LLM-Enhanced Output
+
+```bash
+NVDA: STRONG LEAP BUY
+  Score: 0.863
+  Contract: $75.0 Call Jan 2028
+  Delta: 0.85 | Risk: LOW
+  🤖 Enhanced Score: 0.863 (Original: 0.750)
+  🤖 Confidence Factor: 1.15
+  📊 Sentiment: 0.82 (Strong positive sentiment from AI infrastructure demand)
+  🚀 Catalysts: AI chip demand, data center expansion, new product launches
+```
+
+### API Requirements
+
+**For LLM-Enhanced Analysis:**
+- **GROK_API_KEY**: Required for sentiment analysis and catalyst detection
+- **Fallback**: Gracefully degrades to quantitative analysis if API unavailable
+
+**Configuration:**
+```bash
+# .env file
+GROK_API_KEY=your_grok_api_key_here
+```
 
 ## 🗄️ Database Schema
 

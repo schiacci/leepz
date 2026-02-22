@@ -118,6 +118,35 @@ def main():
         help="Enable market regime filter (default: on)"
     )
     
+    # AI enhancement options
+    parser.add_argument(
+        "--llm-enhanced",
+        type=str,
+        choices=["on", "off"],
+        default="off",
+        help="Enable LLM-enhanced analysis with dynamic scoring (default: off)"
+    )
+    
+    parser.add_argument(
+        "--llm-providers",
+        type=str,
+        default="openrouter,gemini",
+        help="Comma-separated list of LLM providers for consensus analysis (default: openrouter,gemini)"
+    )
+    
+    parser.add_argument(
+        "--llm-sentiment-model",
+        type=str,
+        default="x-ai/grok-beta",
+        help="OpenRouter model to use for sentiment analysis (default: x-ai/grok-beta)"
+    )
+    
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help="Development mode: use mock responses to save API credits"
+    )
+    
     parser.add_argument(
         "--min-growth",
         type=float,
@@ -259,9 +288,12 @@ def main():
                     continue
                 
                 # Get option recommendation using already fetched market data
+                # Always run quantitative analysis first
                 from option_selector import OptionSelector
-                selector = OptionSelector()
-                option_rec = selector.recommend_optimal_structure(
+                quant_selector = OptionSelector()
+                print(f"  📊 Running Quantitative Analysis...")
+                
+                option_rec = quant_selector.recommend_optimal_structure(
                     ticker=symbol,
                     market_data=market_data,  # Use the market data we already fetched!
                     target_delta=args.target_delta,
@@ -270,6 +302,75 @@ def main():
                     max_iv_percentile=args.max_iv_percentile,
                     risk_tolerance=args.risk_tolerance
                 )
+                
+                # Apply LLM enhancement if enabled and quantitative analysis succeeded
+                if args.llm_enhanced == "on" and option_rec.get('success'):
+                    from llm_enhanced_selector import LLMEnhancedOptionSelector
+                    
+                    # Parse providers list
+                    providers = [p.strip().lower() for p in args.llm_providers.split(',')]
+                    
+                    # Development mode: use mock responses
+                    if args.dev_mode:
+                        print(f"  🛠️  Development Mode: Using mock LLM responses")
+                        # Create mock enhanced result
+                        mock_insights = [
+                            {
+                                'provider': 'mock-openrouter',
+                                'sequence': 1,
+                                'sentiment_score': 0.75,
+                                'confidence_level': 0.90,
+                                'sentiment_reasoning': 'Mock bullish sentiment for development',
+                                'volatility_outlook': 'MEDIUM',
+                                'optimal_delta_adjustment': 0.02,
+                                'optimal_dte_adjustment': 30,
+                                'key_catalysts': ['earnings', 'product_launch'],
+                                'risk_factors': ['market_volatility'],
+                                'consensus_position': 'AGREE',
+                                'additional_insights': 'Development mode mock data'
+                            },
+                            {
+                                'provider': 'mock-gemini',
+                                'sequence': 2,
+                                'sentiment_score': 0.80,
+                                'confidence_level': 0.95,
+                                'sentiment_reasoning': 'Mock agrees with bullish sentiment',
+                                'volatility_outlook': 'LOW',
+                                'optimal_delta_adjustment': 0.01,
+                                'optimal_dte_adjustment': 15,
+                                'key_catalysts': ['ai_growth', 'market_expansion'],
+                                'risk_factors': ['competition'],
+                                'consensus_position': 'AGREE',
+                                'additional_insights': 'Development mode mock confirmation'
+                            }
+                        ]
+                        
+                        # Apply mock consensus
+                        from llm_enhanced_selector import LLMEnhancedOptionSelector
+                        mock_selector = LLMEnhancedOptionSelector()
+                        option_rec = mock_selector._apply_multi_llm_consensus(
+                            option_rec, mock_insights, market_data, symbol
+                        )
+                        print(f"  🎯 Mock Enhanced Score: {option_rec.get('enhanced_score', option_rec.get('score', 0)):.3f}")
+                        
+                    else:
+                        # Production mode: use real LLMs
+                        llm_selector = LLMEnhancedOptionSelector(
+                            providers=providers, 
+                            sentiment_model=args.llm_sentiment_model
+                        )
+                        print(f"  🤖 Applying Multi-LLM Enhancement with: {', '.join(providers).upper()}")
+                        print(f"  🧠 Sentiment Model: {args.llm_sentiment_model}")
+                        
+                        # Feed quantitative results into LLM enhancement
+                        option_rec = llm_selector.enhance_quantitative_results(
+                            ticker=symbol,
+                            market_data=market_data,
+                            quantitative_result=option_rec
+                        )
+                elif args.llm_enhanced == "on":
+                    print(f"  ⚠️ LLM enhancement requested but quantitative analysis failed")
+                    print(f"  📊 Using quantitative results only")
                 
                 # Debug option recommendation
                 if not option_rec.get('success'):
@@ -346,6 +447,25 @@ def main():
                         print(f"  Contract: ${contract.strike} Call {contract.expiration.strftime('%b %Y')}")
                         print(f"  Delta: {contract.delta:.2f} | Risk: {opt['risk_assessment']['risk_tier']}")
                         print(f"  Score: {opt.get('score', 'N/A')}")
+                        
+                        # Show LLM insights if available
+                        if 'enhanced_score' in opt:
+                            enhanced_score = opt['enhanced_score']
+                            original_score = opt['original_score']
+                            confidence = opt['confidence_factor']
+                            print(f"  🤖 Enhanced Score: {enhanced_score:.3f} (Original: {original_score:.3f})")
+                            print(f"  🤖 Confidence Factor: {confidence:.2f}")
+                            
+                            # Show sentiment
+                            llm_insights = opt.get('llm_insights', {})
+                            if llm_insights:
+                                sentiment = llm_insights.get('sentiment_score', 0.5)
+                                print(f"  📊 Sentiment: {sentiment:.2f} ({llm_insights.get('sentiment_reasoning', 'N/A')})")
+                                
+                                # Show catalysts
+                                catalysts = llm_insights.get('key_catalysts', [])
+                                if catalysts:
+                                    print(f"  🚀 Catalysts: {', '.join(catalysts[:2])}")
                         
                         # Calculate allocation only if option recommendation succeeded
                         allocation = min(args.max_position_size, 
