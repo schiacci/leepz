@@ -51,10 +51,12 @@ class LLMEnhancedOptionSelector:
         self.llm_clients = {}
         for provider in self.providers:
             try:
-                self.llm_clients[provider] = LLMClient()
+                # Create LLMClient with specific providers
+                self.llm_clients[provider] = LLMClient(provider_ids=[provider])
                 print(f"  🤖 Initialized LLM client: {provider.upper()}")
             except Exception as e:
                 print(f"  ⚠️ Failed to initialize {provider}: {e}")
+                continue
         
         if not self.llm_clients:
             print(f"  ⚠️ No LLM clients available, using baseline analysis only")
@@ -276,19 +278,35 @@ class LLMEnhancedOptionSelector:
             # Call LLM with context
             messages = [{"role": "user", "content": prompt}]
             
+            # Check if this is an Ollama provider to enable streaming
+            is_ollama = "ollama" in provider.lower()
+            
+            # Create a simple stream callback for Ollama models
+            def stream_callback(chunk):
+                if chunk.strip():
+                    print(chunk, end='', flush=True)
+            
             llm_response = llm_client.call_llm(
                 model=model,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=600  # Slightly more tokens for context analysis
+                max_tokens=2000,  # Increased from 600 to get complete JSON
+                stream=is_ollama,  # Enable streaming for Ollama models
+                stream_callback=stream_callback if is_ollama else None
             )
             
             # Parse JSON from LLM response
             try:
-                insights = json.loads(llm_response)
+                # If llm_response is already a dict (from Ollama), use it directly
+                if isinstance(llm_response, dict):
+                    insights = llm_response
+                else:
+                    # Otherwise parse as JSON string
+                    insights = json.loads(llm_response)
+                print(f"  ✅ {provider.upper()} insights: sentiment {insights.get('sentiment_score', 0.5):.2f}, confidence {insights.get('confidence_level', 0.5):.2f}")
                 return insights
-            except json.JSONDecodeError:
-                print(f"  ⚠️ {provider.upper()} response parsing failed")
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"  ⚠️ {provider.upper()} response parsing failed: {e}")
                 return {}
                 
         except Exception as e:

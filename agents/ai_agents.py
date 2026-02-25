@@ -33,6 +33,33 @@ PROVIDER_REGISTRY = {
         "free_tier": True,
         "supports_streaming": False,
     },
+    "ollama": {
+        "name": "Ollama (Local)",
+        "priority": 3,  # Local fallback
+        "client_class": lambda: OllamaClient(config.ollama.model),
+        "model": lambda: config.ollama.model,
+        "requires_key": lambda: True,  # Always available locally
+        "free_tier": True,
+        "supports_streaming": True,  # Enable streaming for all Ollama models
+    },
+    "ollama-deepseek-r1": {
+        "name": "Ollama DeepSeek-R1",
+        "priority": 4,  # Alternative local model
+        "client_class": lambda: OllamaClient("deepseek-r1:latest"),
+        "model": lambda: "deepseek-r1:latest",
+        "requires_key": lambda: True,  # Always available locally
+        "free_tier": True,
+        "supports_streaming": True,  # Enable streaming
+    },
+    "ollama-deepseek-r1-32b": {
+        "name": "Ollama DeepSeek-R1 32B (Slow)",
+        "priority": 6,  # Lower priority due to slow response time
+        "client_class": lambda: OllamaClient("deepseek-r1:32b"),
+        "model": lambda: "deepseek-r1:32b",
+        "requires_key": lambda: True,  # Always available locally
+        "free_tier": True,
+        "supports_streaming": True,  # Enable streaming for slow models
+    },
     # Future providers can be added here with higher priorities
     # "anthropic": {...},
     # "openai": {...},
@@ -270,23 +297,60 @@ Analysis Date: {current_date_context.strftime('%Y-%m-%d')}
 
 
 class GeminiClient:
-    """Mock Google AI (Gemini) client for development - returns realistic dummy responses"""
+    """Google AI (Gemini) client with real API integration"""
     
     def __init__(self):
         self.api_key = config.google_ai.api_key
         self.model = config.google_ai.model
-        print("🤖 Using MOCK Gemini client for development (free, no API calls)")
+        
+        # Check if we should use real API or mock
+        if self.api_key and self.api_key != 'your_google_ai_key_here':
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            # Fix model name format
+            model_name = self.model if self.model.startswith('models/') else f"models/{self.model}"
+            self.client = genai.GenerativeModel(model_name)
+            self.use_real_api = True
+            print(f"🤖 Using REAL Gemini API with model: {model_name}")
+        else:
+            self.use_real_api = False
+            print("🤖 Using MOCK Gemini client for development (free, no API calls)")
     
     def call_llm(self, messages: List[Dict[str, str]], 
                  temperature: float = 0.7, max_tokens: int = 4000,
                  stream: bool = False, stream_callback: Optional[callable] = None) -> str:
         """
-        Return realistic mock responses for development
+        Call Gemini API or return mock responses
         """
-        if not self.api_key or self.api_key == 'your_google_ai_key_here':
-            print("⚠️  Mock Gemini: No real API key - using mock responses")
-        
-        # Extract the last user message to generate a contextual response
+        if self.use_real_api:
+            try:
+                # Extract the last user message
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                last_message = user_messages[-1]["content"] if user_messages else ""
+                
+                # Configure generation parameters
+                generation_config = {
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                }
+                
+                # Call real Gemini API
+                response = self.client.generate_content(
+                    last_message,
+                    generation_config=generation_config
+                )
+                
+                return response.text
+                
+            except Exception as e:
+                print(f"⚠️ Gemini API error: {e}")
+                print("🔄 Falling back to mock responses...")
+                self.use_real_api = False
+                return self._get_mock_response(messages)
+        else:
+            return self._get_mock_response(messages)
+    
+    def _get_mock_response(self, messages: List[Dict[str, str]]) -> str:
         user_messages = [msg for msg in messages if msg["role"] == "user"]
         last_message = user_messages[-1]["content"] if user_messages else ""
         
@@ -353,6 +417,214 @@ class GeminiClient:
 }}'''
 
 
+class OllamaClient:
+    """Ollama local LLM client for offline inference"""
+    
+    def __init__(self, model: str = None):
+        self.base_url = config.ollama.base_url
+        self.model = model or config.ollama.model
+        self.timeout = config.ollama.timeout
+        
+        # Check if Ollama is available
+        try:
+            import requests
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                model_names = [model['name'] for model in models]
+                if self.model in model_names:
+                    print(f"🤖 Using Ollama with model: {self.model}")
+                    self.available = True
+                else:
+                    print(f"⚠️ Model {self.model} not found. Available: {', '.join(model_names)}")
+                    self.available = False
+            else:
+                print(f"⚠️ Ollama not responding at {self.base_url}")
+                self.available = False
+        except Exception as e:
+            print(f"⚠️ Ollama connection error: {e}")
+            self.available = False
+    
+    def call_llm(self, model: str = None, messages: List[Dict[str, str]] = None, 
+                 temperature: float = 0.7, max_tokens: int = 4000,
+                 stream: bool = False, stream_callback: Optional[callable] = None) -> str:
+        """
+        Call Ollama API locally with streaming support
+        
+        Args:
+            model: Model name (ignored, uses self.model)
+            messages: List of message dictionaries
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            stream: Whether to stream response
+            stream_callback: Callback for streaming chunks
+        """
+        if not self.available:
+            return "Ollama not available"
+        
+        if not messages:
+            return "No messages provided"
+        
+        try:
+            import requests
+            
+            # Extract the last user message for Ollama
+            user_messages = [msg for msg in messages if msg["role"] == "user"]
+            last_message = user_messages[-1]["content"] if user_messages else ""
+            
+            # Prepare Ollama API request
+            payload = {
+                "model": self.model,
+                "prompt": last_message,
+                "stream": stream  # Enable streaming
+            }
+            
+            # Add options if provided
+            options = {}
+            if temperature is not None:
+                options["temperature"] = float(temperature)
+            if max_tokens is not None:
+                options["num_predict"] = int(max_tokens)
+            
+            if options:
+                payload["options"] = options
+            
+            if stream and stream_callback:
+                # Streaming mode - get chunks and call callback
+                response = requests.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    stream=True,
+                    timeout=self.timeout
+                )
+                
+                if response.status_code == 200:
+                    full_response = ""
+                    thinking_buffer = ""
+                    
+                    def flush_thinking():
+                        nonlocal thinking_buffer
+                        if thinking_buffer.strip():
+                            # Clean up the thinking text - remove extra spaces and format nicely
+                            clean_text = thinking_buffer.strip()
+                            # Replace multiple spaces with single space
+                            clean_text = ' '.join(clean_text.split())
+                            stream_callback(f"🤔 {clean_text}")
+                            thinking_buffer = ""
+                    
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                # Capture both response and thinking fields
+                                if 'response' in data and data['response']:
+                                    chunk = data['response']
+                                    full_response += chunk
+                                    stream_callback(chunk)
+                                if 'thinking' in data and data['thinking']:
+                                    chunk = data['thinking']
+                                    full_response += chunk
+                                    thinking_buffer += chunk
+                                    
+                                    # Output when we hit sentence boundaries or common punctuation
+                                    if any(punct in thinking_buffer for punct in ['.', '!', '?', '\n']):
+                                        flush_thinking()
+                                    elif len(thinking_buffer) > 300:  # Flush if buffer gets too long
+                                        flush_thinking()
+                                    
+                                if data.get('done', False):
+                                    flush_thinking()  # Flush any remaining thinking
+                                    break
+                            except json.JSONDecodeError:
+                                continue
+                    
+                    # After streaming, try to extract JSON from the full response
+                    if '{' in full_response and '}' in full_response:
+                        # Find the last JSON object in the response
+                        start = full_response.rfind('{')
+                        end = full_response.rfind('}') + 1
+                        json_str = full_response[start:end]
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    return full_response
+                else:
+                    return f"Ollama API error: {response.status_code}"
+            else:
+                # Non-streaming mode
+                payload["stream"] = False
+                response = requests.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    timeout=self.timeout
+                )
+                
+                if response.status_code == 200:
+                    try:
+                        result = response.json()
+                        # Check for response field first, then thinking field
+                        if 'response' in result and result['response']:
+                            response_content = result['response']
+                            # Try to parse the response content as JSON
+                            try:
+                                parsed = json.loads(response_content)
+                                return parsed
+                            except json.JSONDecodeError:
+                                # If not valid JSON, try to extract JSON from the text
+                                if '{' in response_content and '}' in response_content:
+                                    start = response_content.find('{')
+                                    end = response_content.rfind('}') + 1
+                                    json_str = response_content[start:end]
+                                    try:
+                                        return json.loads(json_str)
+                                    except:
+                                        pass
+                                return response_content
+                        elif 'thinking' in result and result['thinking']:
+                            # If only thinking is present, the model is still reasoning
+                            thinking_content = result['thinking']
+                            # Try to extract JSON from thinking
+                            try:
+                                # First try to parse the entire thinking as JSON
+                                parsed = json.loads(thinking_content)
+                                return parsed
+                            except json.JSONDecodeError:
+                                # If that fails, try to find JSON within the thinking text
+                                if '{' in thinking_content and '}' in thinking_content:
+                                    start = thinking_content.find('{')
+                                    end = thinking_content.rfind('}') + 1
+                                    json_str = thinking_content[start:end]
+                                    try:
+                                        return json.loads(json_str)
+                                    except:
+                                        pass
+                                # Return thinking text if no valid JSON found
+                                return thinking_content[:1000] + "..." if len(thinking_content) > 1000 else thinking_content
+                        else:
+                            return result.get('response', '')
+                    except json.JSONDecodeError as e:
+                        # If the entire response isn't JSON, try to extract JSON from text
+                        response_text = response.text
+                        if '{' in response_text and '}' in response_text:
+                            start = response_text.find('{')
+                            end = response_text.rfind('}') + 1
+                            json_str = response_text[start:end]
+                            try:
+                                return json.loads(json_str)
+                            except:
+                                pass
+                        return response_text
+                else:
+                    print(f"❌ Ollama API error: {response.status_code}")
+                    return f"Ollama API error: {response.status_code}"
+                    
+        except Exception as e:
+            print(f"❌ Ollama call error: {e}")
+            return f"Ollama call error: {e}"
+
+
 class MultiProviderLLMClient:
     """Scalable LLM client that supports N providers with intelligent fallback"""
     
@@ -417,6 +689,10 @@ class MultiProviderLLMClient:
                 if provider["id"] == "openrouter":
                     response = client.call_llm(model, messages, temperature, max_tokens, 
                                              use_streaming, stream_callback)
+                elif provider["id"].startswith("ollama"):
+                    # All Ollama models expect model parameter first
+                    response = client.call_llm(model, messages, temperature, max_tokens, 
+                                              use_streaming, stream_callback)
                 else:
                     # Gemini and other providers
                     response = client.call_llm(messages, temperature, max_tokens, 
@@ -454,8 +730,8 @@ class MultiProviderLLMClient:
 class LLMClient(MultiProviderLLMClient):
     """Backward-compatible LLM client for existing code"""
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, provider_ids: Optional[List[str]] = None):
+        super().__init__(provider_ids)
         # For backward compatibility, use first available provider
         if self.providers:
             self.provider = self.providers[0]["id"]

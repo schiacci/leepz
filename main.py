@@ -427,6 +427,62 @@ def main():
                         risk_tier = opt['risk_assessment']['risk_tier']
                     
                     print(f"{symbol:<8} | {score:<6.3f} | {rec:<15} | {strike:<12} | {expiration:<12} | {delta:<6} | {risk_tier:<10}")
+                    
+                    # Add detailed LLM analysis below each symbol
+                    if result['option_recommendation'].get('success'):
+                        opt = result['option_recommendation']['recommendation']
+                        
+                        # Show LLM insights if available
+                        if 'enhanced_score' in opt:
+                            enhanced_score = opt['enhanced_score']
+                            original_score = opt['original_score']
+                            confidence = opt['confidence_factor']
+                            consensus_strength = opt.get('consensus_strength', 0)
+                            avg_confidence = opt.get('avg_confidence', 0)
+                            
+                            print(f"\n📊 {symbol} Detailed Analysis:")
+                            print(f"  🤖 Enhanced Score: {enhanced_score:.3f} (Original: {original_score:.3f})")
+                            print(f"  🤖 Confidence Factor: {confidence:.2f} | Consensus: {consensus_strength:.1%}")
+                            print(f"  🧠 Avg Confidence: {avg_confidence:.2f}")
+                            
+                            # Show detailed LLM insights
+                            llm_insights = opt.get('llm_insights', [])
+                            if llm_insights:
+                                print(f"  📋 LLM Analysis ({len(llm_insights)} providers):")
+                                for insight in llm_insights:
+                                    provider = insight.get('provider', 'unknown').upper()
+                                    sequence = insight.get('sequence', 0)
+                                    sentiment = insight.get('sentiment_score', 0.5)
+                                    conf = insight.get('confidence_level', 0.5)
+                                    reasoning = insight.get('sentiment_reasoning', 'No reasoning provided')
+                                    position = insight.get('consensus_position', 'AGREE')
+                                    
+                                    print(f"    🤖 {provider} (#{sequence}): {sentiment:.2f} sentiment, {conf:.2f} confidence")
+                                    print(f"       📝 Reasoning: {reasoning}")
+                                    print(f"       🎯 Position: {position}")
+                                    
+                                    # Show catalysts and risks
+                                    catalysts = insight.get('key_catalysts', [])
+                                    risks = insight.get('risk_factors', [])
+                                    if catalysts:
+                                        print(f"       🚀 Catalysts: {', '.join(catalysts)}")
+                                    if risks:
+                                        print(f"       ⚠️  Risks: {', '.join(risks)}")
+                                    print()
+                                
+                                # Show aggregated insights
+                                all_catalysts = opt.get('all_catalysts', [])
+                                all_risks = opt.get('all_risks', [])
+                                if all_catalysts:
+                                    print(f"  🚀 All Catalysts: {', '.join(all_catalysts)}")
+                                if all_risks:
+                                    print(f"  ⚠️  All Risks: {', '.join(all_risks)}")
+                            else:
+                                print(f"  📊 Sentiment: N/A (no LLM insights)")
+                        else:
+                            print(f"  📊 Quantitative Analysis Only (no LLM enhancement)")
+                    
+                    print()  # Add spacing between symbols
                 
                 print(f"{'-'*120}")
                 print(f"\n💡 Key:")
@@ -453,19 +509,49 @@ def main():
                             enhanced_score = opt['enhanced_score']
                             original_score = opt['original_score']
                             confidence = opt['confidence_factor']
-                            print(f"  🤖 Enhanced Score: {enhanced_score:.3f} (Original: {original_score:.3f})")
-                            print(f"  🤖 Confidence Factor: {confidence:.2f}")
+                            consensus_strength = opt.get('consensus_strength', 0)
+                            avg_confidence = opt.get('avg_confidence', 0)
                             
-                            # Show sentiment
-                            llm_insights = opt.get('llm_insights', {})
+                            print(f"  🤖 Enhanced Score: {enhanced_score:.3f} (Original: {original_score:.3f})")
+                            print(f"  🤖 Confidence Factor: {confidence:.2f} | Consensus: {consensus_strength:.1%}")
+                            print(f"  🧠 Avg Confidence: {avg_confidence:.2f}")
+                            
+                            # Show detailed LLM insights
+                            llm_insights = opt.get('llm_insights', [])
                             if llm_insights:
-                                sentiment = llm_insights.get('sentiment_score', 0.5)
-                                print(f"  📊 Sentiment: {sentiment:.2f} ({llm_insights.get('sentiment_reasoning', 'N/A')})")
+                                print(f"  📋 LLM Analysis ({len(llm_insights)} providers):")
+                                for insight in llm_insights:
+                                    provider = insight.get('provider', 'unknown').upper()
+                                    sequence = insight.get('sequence', 0)
+                                    sentiment = insight.get('sentiment_score', 0.5)
+                                    conf = insight.get('confidence_level', 0.5)
+                                    reasoning = insight.get('sentiment_reasoning', 'No reasoning provided')
+                                    position = insight.get('consensus_position', 'AGREE')
+                                    
+                                    print(f"    🤖 {provider} (#{sequence}): {sentiment:.2f} sentiment, {conf:.2f} confidence")
+                                    print(f"       📝 Reasoning: {reasoning}")
+                                    print(f"       🎯 Position: {position}")
+                                    
+                                    # Show catalysts and risks
+                                    catalysts = insight.get('key_catalysts', [])
+                                    risks = insight.get('risk_factors', [])
+                                    if catalysts:
+                                        print(f"       🚀 Catalysts: {', '.join(catalysts)}")
+                                    if risks:
+                                        print(f"       ⚠️  Risks: {', '.join(risks)}")
+                                    print()
                                 
-                                # Show catalysts
-                                catalysts = llm_insights.get('key_catalysts', [])
-                                if catalysts:
-                                    print(f"  🚀 Catalysts: {', '.join(catalysts[:2])}")
+                                # Show aggregated insights
+                                all_catalysts = opt.get('all_catalysts', [])
+                                all_risks = opt.get('all_risks', [])
+                                if all_catalysts:
+                                    print(f"  🚀 All Catalysts: {', '.join(all_catalysts)}")
+                                if all_risks:
+                                    print(f"  ⚠️  All Risks: {', '.join(all_risks)}")
+                            else:
+                                print(f"  📊 Sentiment: N/A (no LLM insights)")
+                        else:
+                            print(f"  📊 Quantitative Analysis Only (no LLM enhancement)")
                         
                         # Calculate allocation only if option recommendation succeeded
                         allocation = min(args.max_position_size, 

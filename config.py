@@ -24,7 +24,14 @@ class OpenRouterConfig(BaseModel):
 class GoogleAIConfig(BaseModel):
     """Google AI (Gemini) configuration"""
     api_key: str = Field(default_factory=lambda: os.getenv("GOOGLE_AI_API_KEY", ""))
-    model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
+    model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
+
+
+class OllamaConfig(BaseModel):
+    """Ollama local LLM configuration"""
+    base_url: str = Field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+    model: str = Field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen3:latest"))
+    timeout: int = Field(default_factory=lambda: int(os.getenv("OLLAMA_TIMEOUT", "180")))  # Increased to 3 minutes for large models
 
 
 class LEAPHeuristics(BaseModel):
@@ -51,6 +58,7 @@ class Config(BaseModel):
     """Master configuration class"""
     openrouter: OpenRouterConfig = Field(default_factory=OpenRouterConfig)
     google_ai: GoogleAIConfig = Field(default_factory=GoogleAIConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     leap_heuristics: LEAPHeuristics = Field(default_factory=LEAPHeuristics)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
